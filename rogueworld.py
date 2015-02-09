@@ -9,28 +9,86 @@ height = 90
 cells = {}
 
 
+class Map:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.cells = {}
+
+    def __setitem__(self, key, value):
+        cx, cy = key
+        if cx >= width or cy >= height:
+            raise ValueError
+
+        self.cells[cx, cy] = value
+
+    def __getitem__(self, key):
+        return self.cells[key]
+
+
+class Cell:
+    def __init__(self):
+        self.exits = set()
+        self.dests = set()
+
+
+class City(Cell):
+    pass
+
+
+class Path(Cell):
+    pass
+
+
 # generate cities
 
+def place_cities(width, height, citycount, distance):
+    cities = []
+
+    def city_isolated(cx, cy, cities, distance):
+        for nx, ny in cities:
+            if abs(nx - cx) < distance or abs(ny - cy) < distance:
+                return False
+        return True
+
+    while len(cities) < citycount:
+        x = random.randint(0, width - 1)
+        y = random.randint(0, height - 1)
+
+        if not city_isolated(cx, cy, cities, distance):
+            continue
+
+        cities.append((x, y))
+
+    return cities
+
+
 citycount = 5
-cities = []
 distance = 10
+cities = place_cities(width, height, citycount, distance)
+for cx, cy in cities:
+    cells[cx, cy] = City()
 
-while len(cities) < citycount:
-    x = random.randint(0, width - 1)
-    y = random.randint(0, height - 1)
 
-    reject = False
-    for cx, cy in cities:
-        if abs(x - cx) < distance or abs(y - cy) < distance:
-            reject = True
-            break
+def get_angle(x1, y1, x2, y2):
+    return math.degrees(math.atan2(y2 - y1, x2 - x1)) + 180
 
-    if reject:
-        continue
 
-    cities.append((x, y))
-    cells[x, y] = 'city'
-print(cities)
+def reverse_angle(angle):
+    return (angle + 180) % 360
+
+
+def unique_angle(angle, paths, minangle):
+    for pangle in paths:
+        diff = abs(pangle - angle)
+        if diff < minangle or diff > 360 - minangle:
+            return False
+    return True
+
+
+def can_enter(ncell):
+    x, y = ncell
+    return x >= 0 and y >= 0 and x < width and y < height
 
 
 # draw paths
@@ -52,21 +110,11 @@ for cx, cy in cities:
         if len(paths[cx, cy]) == maxpaths:
             break
 
-        angle = math.degrees(math.atan2(ny - cy, nx - cx)) + 180
-        rangle = (angle + 180) % 360
-        reject = False
-        for pangle in paths[cx, cy]:
-            diff = abs(pangle - angle)
-            if diff < minangle or diff > 360 - minangle:
-                reject = True
-                break
-        for pangle in paths[nx, ny]:
-            diff = abs(pangle - rangle)
-            if diff < minangle or diff > 360 - minangle:
-                reject = True
-                break
+        angle = get_angle(cx, cy, nx, ny)
+        rangle = reverse_angle(angle)
 
-        if reject:
+        if (not unique_angle(angle, paths[cx, cy], minangle)
+                or not unique_angle(rangle, paths[nx, ny], minangle)):
             continue
 
         if len(paths[cx, cy]) > minpaths and len(paths[nx, ny]) == maxpaths:
@@ -78,32 +126,23 @@ for cx, cy in cities:
         x, y = cx, cy
         backdir = None
         while (abs(nx - x) + abs(ny - y) > 1):
-            dirs = [d for d in range(4) if d != backdir] * base
+            dirs = []
+            ncells = [(x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y)]
+            deltas = [y - ny, nx - x, ny - y, x - nx]
 
-            if ny < y and backdir != 0:  # north
-                dirs += [0] * (fwt + (y - ny) * pwt)
-            if nx > x and backdir != 1:  # east
-                dirs += [1] * (fwt + (nx - x) * pwt)
-            if ny > y and backdir != 2:  # south
-                dirs += [2] * (fwt + (ny - y) * pwt)
-            if nx < x and backdir != 3:  # west
-                dirs += [3] * (fwt + (x - nx) * pwt)
+            for ndir in range(4):
+                if ndir != backdir and can_enter(ncells[ndir]):
+                    dirs += [ndir] * (base + ((fwt + deltas[ndir] * pwt)
+                                              if deltas[ndir] > 0 else 0))
 
             direction = random.choice(dirs)
-
-            if direction == 0 and y > 0:
-                y -= 1
-            elif direction == 1 and x < width - 1:
-                x += 1
-            elif direction == 2 and y < height - 1:
-                y += 1
-            elif direction == 3 and x > 0:
-                x -= 1
-
-            if (x, y) not in cells:
-                cells[x, y] = 'path'
-
             backdir = (direction + 2) % 4
+
+            x, y = ncells[direction]
+
+            cell = cells.setdefault((x, y), Path())
+            cell.dests |= set([(cx, cy), (nx, ny)])
+            cell.exits |= set([direction, backdir])
 
 
 # generate map image
