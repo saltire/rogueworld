@@ -29,11 +29,14 @@ class Map:
 class Cell:
     def __init__(self):
         self.exits = set()
-        self.dests = set()
+        self.dests = {}
 
 
 class City(Cell):
-    pass
+    def __init__(self):
+        Cell.__init__(self)
+
+        self.paths = set()
 
 
 class Path(Cell):
@@ -52,13 +55,13 @@ def place_cities(width, height, citycount, distance):
         return True
 
     while len(cities) < citycount:
-        x = random.randint(0, width - 1)
-        y = random.randint(0, height - 1)
+        cx = random.randint(0, width - 1)
+        cy = random.randint(0, height - 1)
 
         if not city_isolated(cx, cy, cities, distance):
             continue
 
-        cities.append((x, y))
+        cities.append((cx, cy))
 
     return cities
 
@@ -89,6 +92,10 @@ def unique_angle(angle, paths, minangle):
 def can_enter(ncell):
     x, y = ncell
     return x >= 0 and y >= 0 and x < width and y < height
+
+
+def get_direction(x1, y1, x2, y2):
+    return [(0, -1), (1, 0), (0, 1), (-1, 0)].index((x2 - x1, y2 - y1))
 
 
 # draw paths
@@ -123,26 +130,55 @@ for cx, cy in cities:
         paths[cx, cy].append(angle)
         paths[nx, ny].append(rangle)
 
+        path = [(cx, cy)]
         x, y = cx, cy
-        backdir = None
         while (abs(nx - x) + abs(ny - y) > 1):
-            dirs = []
-            ncells = [(x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y)]
-            deltas = [y - ny, nx - x, ny - y, x - nx]
+            def pick_weighted_dir(x, y, nx, ny, lx, ly):
+                # cells to the N, E, S, W
+                ncells = [(x, y - 1), (x + 1, y), (x, y + 1), (x - 1, y)]
+                # distance to travel N, E, S, W
+                deltas = [y - ny, nx - x, ny - y, x - nx]
 
-            for ndir in range(4):
-                if ndir != backdir and can_enter(ncells[ndir]):
+                # calculate weights for each direction and make a weighted list
+                dirs = []
+                for ndir in range(4):
+                    ncell = ncells[ndir]
+
+                    # skip this direction if we can't enter or it leads backward
+                    if not can_enter(ncell) or (nx, ny) == (lx, ly):
+                        continue
+
                     dirs += [ndir] * (base + ((fwt + deltas[ndir] * pwt)
                                               if deltas[ndir] > 0 else 0))
 
-            direction = random.choice(dirs)
-            backdir = (direction + 2) % 4
+                # pick a direction from the weighted list and get the next cell
+                return ncells[random.choice(dirs)]
 
-            x, y = ncells[direction]
+            lx, ly = path[-2] if len(path) > 1 else (None, None)
 
+            if (x, y) in cells and (nx, ny) in cells[x, y].dests:
+                x, y = cells[x, y].dests[nx, ny]
+            else:
+                x, y = pick_weighted_dir(x, y, nx, ny, lx, ly)
+
+            if (x, y) in path:
+                # truncate path to just before first pass through this cell
+                path = path[:path.index((x, y))]
+
+            path.append((x, y))
+
+        path.append((nx, ny))
+        for i, (x, y) in enumerate(path):
             cell = cells.setdefault((x, y), Path())
-            cell.dests |= set([(cx, cy), (nx, ny)])
-            cell.exits |= set([direction, backdir])
+            if i < len(path) - 1:
+                cell.dests[nx, ny] = path[i + 1]
+                cell.exits.add(get_direction(x, y, *path[i + 1]))
+
+            if i > 0:
+                cell.dests[cx, cy] = path[i - 1]
+                cell.exits.add(get_direction(x, y, *path[i - 1]))
+
+
 
 
 # generate map image
@@ -153,9 +189,9 @@ for y in range(height):
     for x in range(width):
         if (x, y) not in cells:
             continue
-        if cells[x, y] == 'city':
+        if isinstance(cells[x, y], City):
             pix[x, y] = 255, 0, 0
-        elif cells[x, y] == 'path':
+        elif isinstance(cells[x, y], Path):
             pix[x, y] = 255, 255, 255
 
 img.save('map.png')
