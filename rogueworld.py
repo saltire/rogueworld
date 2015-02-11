@@ -3,6 +3,8 @@ import random
 
 from PIL import Image
 
+from cities import place_cities
+
 
 width = 160
 height = 90
@@ -44,27 +46,6 @@ class Path(Cell):
 
 
 # generate cities
-
-def place_cities(width, height, citycount, distance):
-    cities = []
-
-    def city_isolated(cx, cy, cities, distance):
-        for nx, ny in cities:
-            if abs(nx - cx) < distance or abs(ny - cy) < distance:
-                return False
-        return True
-
-    while len(cities) < citycount:
-        cx = random.randint(0, width - 1)
-        cy = random.randint(0, height - 1)
-
-        if not city_isolated(cx, cy, cities, distance):
-            continue
-
-        cities.append((cx, cy))
-
-    return cities
-
 
 citycount = 5
 distance = 10
