@@ -62,14 +62,13 @@ def find_path(cells, start, dest):
 def propagate_routes_to(cells, prev, current, routes):
     new_routes = {}
 
-    for dest, (rdist, _) in routes.items():
-        rdist += 1
+    for dest, (distance, _) in routes.items():
         existing_dist, _ = cells[current].routes.get(dest, (None, None))
 
         # figure out which of the new routes are in fact new or shorter
         # then save them and keep track of whether we made changes
-        if existing_dist is None or rdist < existing_dist:
-            cells[current].routes[dest] = rdist, prev
+        if existing_dist is None or distance + 1 < existing_dist:
+            cells[current].routes[dest] = distance + 1, prev
             new_routes[dest] = cells[current].routes[dest]
 
     # propagate the new routes along all the unchanged routes
@@ -81,42 +80,17 @@ def propagate_routes_to(cells, prev, current, routes):
 # follow a list of coordinates, marking the distance back to the origin at each step
 def blaze_path(cells, prev, path):
     start_routes = cells[prev].routes
-    distance = 0
 
     for current in path:
-        distance += 1
-
         # create a cell at every step except the last one, which should already be a cell
         if current != path[-1]:
             cells[current] = Cell()
+
             # continue each of the origin cell's routes in this cell
-            for dest, (rdist, _) in start_routes.items():
-                cells[current].routes[dest] = rdist + distance, prev
+            for dest, (distance, _) in cells[prev].routes.items():
+                cells[current].routes[dest] = distance + 1, prev
 
             prev = current
-
-    # now do the last cell, and propagate routes across the new connection
-    new_routes = {}
-    # we will be sending routes from this cell back along any new/shorter routes
-    back_routes = {current: 0, None}
-
-    # figure out which of the new routes are in fact new or shorter
-    for dest, (rdist, _) in start_routes.items():
-        rdist += distance
-        existing_dist, _ = cells[current].routes.get(dest, (None, None))
-
-        # figure out which of the new routes are in fact new or shorter
-        # then save them and keep track of whether we made changes or not
-        if existing_dist is None or rdist < existing_dist:
-            cells[current].routes[dest] = rdist, prev
-            new_routes[dest] = cells[current].routes[dest]
-        else:
-            back_routes[dest] = cells[current].routes[dest]
-
-    # propagate the new routes along all the unchanged routes, and vice versa
-    for dest, (_, nextstep) in cells[current].routes.items():
-        propagate_routes_to(cells, current, nextstep,
-                            back_routes if dest in new_routes else new_routes)
 
 
 def link_cities(cells, origin, dest):
@@ -128,9 +102,11 @@ def link_cities(cells, origin, dest):
         path = find_path(start, dest)
         current = path[-1]
 
-        if origin in cells[current].dests:
+        if origin in cells[current].routes:
             # there is already a path from origin to here - don't blaze a new one
             # even if the existing one is longer
+            # FIXME: this only really makes sense if it's a direct path back to origin
+            # i.e. not one that has been propagated. maybe we should propagate at the end
             distance, _ = cells[current].routes[origin]
             continue
 
@@ -139,3 +115,9 @@ def link_cities(cells, origin, dest):
 
         if current == dest:
             break
+
+    # now propagate the destination cell's routes back along the new path to the origin
+    back_routes = {dest: 0, None}
+    back_routes.update(cells[dest].routes)
+    _, prev = cells[dest].routes[origin]
+    propagate_routes_to(cells, dest, prev, back_routes)
